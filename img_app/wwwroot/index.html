@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zpracování obrázků z URL</title>
+<style>
+  :root {
+    --bg: #f4f4f0;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6b65;
+    --line: #e0e0d8;
+    --accent: #1d6e56;
+    --accent-soft: #e1f5ee;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  header {
+    background: var(--ink);
+    color: #fff;
+    padding: 14px 24px;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header p { margin: 2px 0 0; font-size: 13px; color: #b8b8b0; }
+
+  /* Záložky */
+  .tabs { display: flex; gap: 4px; background: var(--ink); padding: 0 24px; }
+  .tab {
+    background: transparent; color: #b8b8b0; border: none;
+    border-radius: 0; padding: 10px 18px; font-size: 14px; font-weight: 600;
+    cursor: pointer; border-bottom: 3px solid transparent;
+  }
+  .tab:hover { color: #fff; background: rgba(255,255,255,.06); }
+  .tab.active { color: #fff; border-bottom-color: var(--accent); }
+
+  .layout { display: flex; gap: 0; align-items: flex-start; }
+  main { flex: 1; padding: 24px; min-width: 0; }
+  aside {
+    width: 300px;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    padding: 24px;
+    min-height: calc(100vh - 100px);
+    position: sticky;
+    top: 0;
+  }
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    resize: vertical;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #15543f; }
+  button.secondary {
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  button.secondary:hover { background: #f0f0ea; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+  .count { color: var(--muted); font-size: 13px; }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .thumb {
+    position: relative;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    background: #fff;
+    aspect-ratio: 1;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .thumb.selected { border-color: var(--accent); }
+  .thumb .check {
+    position: absolute; top: 6px; left: 6px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(255,255,255,.9); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: var(--accent); font-weight: 700;
+  }
+  .thumb.selected .check { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .thumb .err { padding: 8px; font-size: 11px; color: #a32d2d; }
+  aside h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 14px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .field input[type=number], .field select, .field input[type=text], .field input[type=password] {
+    width: 100%; padding: 8px; border: 1px solid var(--line);
+    border-radius: var(--radius); font-size: 14px;
+  }
+  .field input[type=range] { width: 100%; }
+  .switch { display: flex; align-items: center; gap: 8px; }
+  .val { font-size: 12px; color: var(--muted); float: right; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+  #result { margin-top: 16px; font-size: 13px; }
+  .result-item { background: var(--accent-soft); padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; word-break: break-all; }
+  .spinner { display: none; font-size: 13px; color: var(--muted); }
+
+  /* ---- FTP správce ---- */
+  .ftp-wrap { padding: 20px 24px; }
+  .ftp-conn {
+    display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 16px;
+  }
+  .ftp-conn .cf { display: flex; flex-direction: column; gap: 4px; }
+  .ftp-conn .cf label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .ftp-conn input[type=text], .ftp-conn input[type=password], .ftp-conn input[type=number] {
+    padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 14px;
+  }
+  .ftp-conn .tls { display: flex; align-items: center; gap: 6px; font-size: 13px; padding-bottom: 8px; }
+
+  .ftp-status { font-size: 13px; color: var(--muted); margin: 0 0 12px; min-height: 18px; }
+  .ftp-status.err { color: #a32d2d; }
+  .ftp-status.ok { color: var(--accent); }
+
+  .ftp-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 820px) { .ftp-panes { grid-template-columns: 1fr; } }
+  .pane {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); min-height: 360px; display: flex; flex-direction: column;
+  }
+  .pane-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600;
+  }
+  .pane-head .grow { flex: 1; }
+  .pane-head .crumb { font-weight: 400; color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+  .pane-head button { padding: 5px 10px; font-size: 12px; }
+  .pane-body { padding: 8px; flex: 1; overflow: auto; }
+
+  /* FTP seznam */
+  .fs-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+    border-radius: 6px; font-size: 14px;
+  }
+  .fs-row .ic { width: 18px; text-align: center; }
+  .fs-row .nm { flex: 1; word-break: break-all; }
+  .fs-row .sz { color: var(--muted); font-size: 12px; }
+  .fs-row .del {
+    background: transparent; color: var(--muted); border: none; padding: 2px 6px;
+    font-size: 13px; cursor: pointer; opacity: 0; border-radius: 4px;
+  }
+  .fs-row:hover .del { opacity: 1; }
+  .fs-row .del:hover { color: #a32d2d; background: #fceaea; }
+  .fs-row.dir { cursor: pointer; }
+  .fs-row.dir:hover { background: var(--accent-soft); }
+  .fs-row.drag-over { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; }
+
+  .pane-body.drop-target.drag-over { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -4px; }
+
+  /* Staging (zpracované / přetažené z disku) */
+  .stage-hint { color: var(--muted); font-size: 13px; padding: 24px 8px; text-align: center; }
+  .stage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+  .stage-thumb {
+    position: relative; border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; background: #fff; cursor: grab; aspect-ratio: 1;
+  }
+  .stage-thumb:active { cursor: grabbing; }
+  .stage-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .stage-thumb .nm {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 10px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .stage-thumb .rm {
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px;
+    border-radius: 50%; background: rgba(255,255,255,.9); border: 1px solid var(--line);
+    color: #a32d2d; font-size: 12px; line-height: 1; cursor: pointer; padding: 0;
+  }
+  .stage-thumb.uploaded { border-color: var(--accent); }
+  .stage-thumb.uploaded::after {
+    content: '✓'; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    background: var(--accent); color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Zpracování obrázků z URL</h1>
+  <p>Vlož zdroj → vyber fotky → nastav → zpracuj → nahraj na FTP</p>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="proc">Zpracování</button>
+  <button class="tab" data-tab="ftp">FTP správce</button>
+</nav>
+
+<!-- =========================== ZPRACOVÁNÍ =========================== -->
+<div id="view-proc">
+<div class="layout">
+  <main>
+    <!-- KROK 1: vstup -->
+    <textarea id="source" placeholder="Sem vlož HTML zdroják webu, JSON / XML feed, nebo seznam URL obrázků..."></textarea>
+    <div class="toolbar">
+      <button onclick="parseSource()">Najít obrázky</button>
+      <span class="count" id="foundCount"></span>
+      <span style="flex:1"></span>
+      <button class="secondary" onclick="selectAll()">Vybrat vše</button>
+      <button class="secondary" onclick="clearSel()">Zrušit výběr</button>
+    </div>
+
+    <!-- KROK 3: galerie -->
+    <div class="gallery" id="gallery"></div>
+  </main>
+
+  <!-- KROK 4 + 6: nastavení a uložení -->
+  <aside>
+    <h2>Nastavení zpracování</h2>
+
+    <div class="field">
+      <div class="switch">
+        <input type="checkbox" id="trimContent" checked>
+        <label for="trimContent" style="margin:0">Oříznout průhledné / bílé okraje</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="switch">
+        <input type="checkbox" id="addBorder">
+        <label for="addBorder" style="margin:0">Bílý okraj</label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Šířka okraje (px) <span class="val" id="borderVal">20</span></label>
+      <input type="range" id="borderPx" min="0" max="100" value="20" oninput="borderVal.textContent=this.value">
+    </div>
+
+    <div class="field">
+      <label>Jas <span class="val" id="brightVal">100 %</span></label>
+      <input type="range" id="brightness" min="50" max="150" value="100" oninput="brightVal.textContent=this.value+' %'">
+    </div>
+
+    <div class="field">
+      <label>Max. velikost (delší strana, px)</label>
+      <input type="number" id="maxPx" value="0" min="0" placeholder="0 = neměnit">
+    </div>
+
+    <div class="field">
+      <label>Výstupní formát</label>
+      <select id="format">
+        <option value="PNG" selected>PNG (bezztrátový)</option>
+        <option value="WEBP">WebP (bezztrátový)</option>
+        <option value="JPEG">JPEG (ztrátový – generation loss)</option>
+      </select>
+      <div id="fmtNote" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">
+        Base64/staging: JPEG → PNG (bezztrátový výstup)
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Kvalita (JPEG/WebP) <span class="val" id="qVal">90</span></label>
+      <input type="range" id="quality" min="60" max="100" value="90" oninput="qVal.textContent=this.value">
+    </div>
+
+    <hr>
+
+    <div class="field">
+      <label>Forma uložení</label>
+      <select id="saveMode">
+        <option value="stage">→ Poslat do FTP správce</option>
+        <option value="zip">Stáhnout ZIP</option>
+        <option value="base64">Base64 řetězce</option>
+        <option value="ftp">Nahrát na FTP (rychlé, do jedné složky)</option>
+      </select>
+    </div>
+
+    <button onclick="processSelected()" id="goBtn" style="width:100%">Zpracovat vybrané</button>
+    <div class="spinner" id="spinner">Zpracovávám…</div>
+    <div id="result"></div>
+  </aside>
+</div>
+</div>
+
+<!-- =========================== FTP SPRÁVCE =========================== -->
+<div id="view-ftp" hidden>
+<div class="ftp-wrap">
+  <div class="ftp-conn">
+    <div class="cf"><label>Host</label><input type="text" id="fHost" placeholder="ftp.example.com" style="width:180px"></div>
+    <div class="cf"><label>Port</label><input type="number" id="fPort" value="21" style="width:70px"></div>
+    <div class="cf"><label>Uživatel</label><input type="text" id="fUser" placeholder="user" style="width:140px"></div>
+    <div class="cf"><label>Heslo</label><input type="password" id="fPass" style="width:140px"></div>
+    <label class="tls"><input type="checkbox" id="fTls"> FTPS (TLS)</label>
+    <button onclick="ftpConnect()">Připojit</button>
+  </div>
+
+  <p class="ftp-status" id="ftpStatus">Zadej přístupové údaje a klikni na Připojit.</p>
+
+  <div class="ftp-panes">
+    <!-- LEVÝ PANEL: FTP strom -->
+    <div class="pane">
+      <div class="pane-head">
+        <span>FTP server</span>
+        <span class="grow"></span>
+        <button class="secondary" onclick="ftpMkdir()">+ Složka</button>
+        <button class="secondary" onclick="ftpRefresh()">Obnovit</button>
+      </div>
+      <div class="pane-head" style="border-top:0">
+        <span class="crumb" id="ftpCrumb">/</span>
+      </div>
+      <div class="pane-body drop-target" id="ftpList"
+           ondragover="onDirOver(event, this)" ondragleave="onDirLeave(event, this)"
+           ondrop="onDirDrop(event, '')">
+        <div class="stage-hint">Zatím nepřipojeno.</div>
+      </div>
+    </div>
+
+    <!-- PRAVÝ PANEL: staging (zpracované + z disku) -->
+    <div class="pane">
+      <div class="pane-head">
+        <span>Připravené obrázky</span>
+        <span class="grow"></span>
+        <button class="secondary" onclick="clearStage()">Vyčistit</button>
+      </div>
+      <div class="pane-body drop-target" id="stageBody"
+           ondragover="onStageOver(event)" ondragleave="onStageLeave(event)" ondrop="onStageDrop(event)">
+        <div class="stage-hint" id="stageHint">
+          Sem přetáhni obrázky z počítače, nebo je sem pošli ze záložky
+          „Zpracování". Pak je táhni myší na složku vlevo = nahrání na FTP.
+        </div>
+        <div class="stage-grid" id="stageGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const H = {'Content-Type': 'application/json'};
+const val = id => document.getElementById(id).value;
+
+/* ---- Poznámka formátu při base64/stage režimu ---- */
+document.getElementById('saveMode').addEventListener('change', function() {
+  const isBase64 = this.value === 'base64' || this.value === 'stage';
+  document.getElementById('fmtNote').style.display = isBase64 ? 'block' : 'none';
+});
+
+/* ----------------------------- Záložky ----------------------------- */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.getElementById('view-proc').hidden = name !== 'proc';
+  document.getElementById('view-ftp').hidden = name !== 'ftp';
+}
+
+/* ===================== ZPRACOVÁNÍ (původní logika) ===================== */
+let urls = [];            // všechny nalezené URL
+let selected = new Set(); // indexy vybraných
+
+async function parseSource() {
+  const text = document.getElementById('source').value;
+  const res = await fetch('/parse', {
+    method: 'POST', headers: H, body: JSON.stringify({text})
+  });
+  const data = await res.json();
+  urls = data.urls;
+  selected.clear();
+  document.getElementById('foundCount').textContent =
+    `Nalezeno ${data.count} obrázků` + (data.count > 500 ? ' (zobrazeno prvních 500)' : '');
+  renderGallery();
+}
+
+function renderGallery() {
+  const g = document.getElementById('gallery');
+  g.innerHTML = '';
+  urls.slice(0, 500).forEach((url, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb' + (selected.has(i) ? ' selected' : '');
+    div.onclick = () => toggle(i);
+    div.innerHTML = `<div class="check">${selected.has(i) ? '✓' : ''}</div>
+      <img loading="lazy" src="/proxy?url=${encodeURIComponent(url)}"
+           onerror="this.parentElement.innerHTML='<div class=err>Nelze načíst</div>'">`;
+    g.appendChild(div);
+  });
+}
+
+function toggle(i) {
+  if (selected.has(i)) selected.delete(i);
+  else {
+    if (selected.size >= 20) { alert('Maximálně 20 obrázků ke zpracování.'); return; }
+    selected.add(i);
+  }
+  renderGallery();
+}
+
+function selectAll() {
+  selected.clear();
+  for (let i = 0; i < Math.min(urls.length, 20); i++) selected.add(i);
+  if (urls.length > 20) alert('Vybráno prvních 20 (limit zpracování).');
+  renderGallery();
+}
+function clearSel() { selected.clear(); renderGallery(); }
+
+async function processSelected() {
+  if (selected.size === 0) { alert('Nejprve vyber alespoň jeden obrázek.'); return; }
+  const chosen = [...selected].map(i => urls[i]);
+  const settings = {
+    trim_content: document.getElementById('trimContent').checked,
+    add_border: document.getElementById('addBorder').checked,
+    border_px: +document.getElementById('borderPx').value,
+    brightness: +document.getElementById('brightness').value / 100,
+    max_px: +document.getElementById('maxPx').value,
+    format: document.getElementById('format').value,
+    quality: +document.getElementById('quality').value,
+  };
+  const saveMode = document.getElementById('saveMode').value;
+  const spinner = document.getElementById('spinner');
+  const result = document.getElementById('result');
+  spinner.style.display = 'block';
+  result.innerHTML = '';
+
+  // "stage" znamená: zpracuj a pošli do FTP správce (server vrací base64)
+  const serverMode = saveMode === 'stage' ? 'base64' : saveMode;
+  const payload = {urls: chosen, settings, save_mode: serverMode};
+
+  try {
+    if (saveMode === 'zip') {
+      const res = await fetch('/process', {method: 'POST', headers: H, body: JSON.stringify(payload)});
+      if (!res.ok) throw new Error((await res.json()).error || 'Chyba');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'zpracovane_obrazky.zip';
+      a.click();
+      result.innerHTML = '<div class="result-item">ZIP stažen ✓</div>';
+    } else {
+      const res = await fetch('/process', {method: 'POST', headers: H, body: JSON.stringify(payload)});
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      if (saveMode === 'stage') {
+        data.items.forEach(it => staged.push({name: it.name, dataUri: it.data_uri, done: false}));
+        renderStage();
+        switchTab('ftp');
+        result.innerHTML = `<div class="result-item">${data.items.length} obrázků posláno do FTP správce ✓</div>`;
+      } else if (data.mode === 'base64') {
+        result.innerHTML = data.items.map(it =>
+          `<div class="result-item"><strong>${it.name}</strong><br>
+           <textarea readonly style="min-height:60px;font-size:10px">${it.data_uri}</textarea></div>`
+        ).join('');
+      } else if (data.mode === 'ftp') {
+        result.innerHTML = `<div class="result-item">Nahráno na FTP: ${data.uploaded.join(', ')}</div>`;
+      }
+    }
+  } catch (e) {
+    result.innerHTML = `<div class="result-item" style="background:#fceaea;color:#a32d2d">Chyba: ${e.message}</div>`;
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
+/* ========================= FTP SPRÁVCE ========================= */
+let ftp = null;             // {host, port, user, password, tls}
+let currentPath = '/';
+let staged = [];            // {name, dataUri, done}
+
+function ftpCreds() {
+  return {
+    host: val('fHost').trim(),
+    port: +val('fPort') || 21,
+    user: val('fUser'),
+    password: val('fPass'),
+    tls: document.getElementById('fTls').checked,
+  };
+}
+
+function ftpStatus(msg, kind) {
+  const el = document.getElementById('ftpStatus');
+  el.textContent = msg;
+  el.className = 'ftp-status' + (kind ? ' ' + kind : '');
+}
+
+async function ftpConnect() {
+  const creds = ftpCreds();
+  if (!creds.host) { ftpStatus('Vyplň alespoň host.', 'err'); return; }
+  ftp = creds;
+  await ftpNavigate('');   // prázdná cesta = výchozí složka po přihlášení
+}
+
+async function ftpNavigate(path) {
+  if (!ftp) { ftpStatus('Nejprve se připoj.', 'err'); return; }
+  ftpStatus('Načítám…');
+  try {
+    const res = await fetch('/ftp/list', {method: 'POST', headers: H, body: JSON.stringify({...ftp, path})});
+    const d = await res.json();
+    if (d.error) { ftpStatus(d.error, 'err'); return; }
+    currentPath = d.path || '/';
+    document.getElementById('ftpCrumb').textContent = currentPath;
+    renderFs(d.entries);
+    ftpStatus('Připojeno · ' + currentPath, 'ok');
+  } catch (e) {
+    ftpStatus('Chyba: ' + e.message, 'err');
+  }
+}
+
+function ftpRefresh() { if (ftp) ftpNavigate(currentPath); }
+
+function parentPath(p) {
+  if (!p || p === '/') return '/';
+  const x = p.replace(/\/+$/, '');
+  const i = x.lastIndexOf('/');
+  return i <= 0 ? '/' : x.slice(0, i);
+}
+function joinPath(base, name) {
+  if (base.endsWith('/')) return base + name;
+  return base + '/' + name;
+}
+
+function renderFs(entries) {
+  const box = document.getElementById('ftpList');
+  box.innerHTML = '';
+
+  // řádek ".." pro výstup nahoru
+  if (currentPath && currentPath !== '/') {
+    const up = document.createElement('div');
+    up.className = 'fs-row dir';
+    up.innerHTML = `<span class="ic">↩</span><span class="nm">..</span>`;
+    const parent = parentPath(currentPath);
+    up.ondblclick = () => ftpNavigate(parent);
+    up.ondragover = e => onDirOver(e, up);
+    up.ondragleave = e => onDirLeave(e, up);
+    up.ondrop = e => onDirDrop(e, parent);
+    box.appendChild(up);
+  }
+
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'stage-hint';
+    empty.textContent = '(prázdná složka)';
+    box.appendChild(empty);
+    return;
+  }
+
+  entries.forEach(en => {
+    const row = document.createElement('div');
+    const isDir = en.type === 'dir';
+    row.className = 'fs-row' + (isDir ? ' dir' : '');
+    const sz = isDir ? '' : `<span class="sz">${fmtSize(en.size)}</span>`;
+    row.innerHTML =
+      `<span class="ic">${isDir ? '📁' : '🖼'}</span>` +
+      `<span class="nm">${escapeHtml(en.name)}</span>${sz}` +
+      `<button class="del" title="Smazat">✕</button>`;
+
+    if (isDir) {
+      const childPath = joinPath(currentPath, en.name);
+      row.ondblclick = () => ftpNavigate(childPath);
+      row.ondragover = e => onDirOver(e, row);
+      row.ondragleave = e => onDirLeave(e, row);
+      row.ondrop = e => onDirDrop(e, childPath);
+    }
+    row.querySelector('.del').onclick = ev => {
+      ev.stopPropagation();
+      ftpDelete(en.name, isDir);
+    };
+    box.appendChild(row);
+  });
+}
+
+async function ftpMkdir() {
+  if (!ftp) { ftpStatus('Nejprve se připoj.', 'err'); return; }
+  const name = prompt('Název nové složky:');
+  if (!name) return;
+  const res = await fetch('/ftp/mkdir', {method: 'POST', headers: H, body: JSON.stringify({...ftp, path: currentPath, name})});
+  const d = await res.json();
+  if (d.error) { ftpStatus(d.error, 'err'); return; }
+  ftpStatus('Složka vytvořena: ' + name, 'ok');
+  ftpRefresh();
+}
+
+async function ftpDelete(name, isDir) {
+  if (!confirm(`Opravdu smazat ${isDir ? 'složku' : 'soubor'} "${name}"?`)) return;
+  const res = await fetch('/ftp/delete', {method: 'POST', headers: H, body: JSON.stringify({...ftp, path: currentPath, name, is_dir: isDir})});
+  const d = await res.json();
+  if (d.error) { ftpStatus(d.error, 'err'); return; }
+  ftpStatus('Smazáno: ' + name, 'ok');
+  ftpRefresh();
+}
+
+/* ----- jádro nahrávání: jeden soubor na zadanou cestu ----- */
+async function uploadOne(targetPath, name, dataUri) {
+  const res = await fetch('/ftp/upload', {
+    method: 'POST', headers: H,
+    body: JSON.stringify({...ftp, path: targetPath, name, data_b64: dataUri})
+  });
+  const d = await res.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+/* ----- drop na FTP složku (levý panel) ----- */
+function onDirOver(e, el) {
+  if (!ftp) return;
+  e.preventDefault();
+  e.stopPropagation();
+  el.classList.add('drag-over');
+}
+function onDirLeave(e, el) { el.classList.remove('drag-over'); }
+
+async function onDirDrop(e, targetPath) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  if (!ftp) { ftpStatus('Nejprve se připoj.', 'err'); return; }
+  // cílová cesta: '' znamená drop na pozadí panelu = aktuální složka
+  const path = targetPath || currentPath;
+
+  // 1) soubory přetažené z počítače
+  const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+  if (files.length) {
+    ftpStatus(`Nahrávám ${files.length} souborů → ${path}…`);
+    let ok = 0;
+    for (const f of files) {
+      try { const uri = await readFileAsDataURL(f); await uploadOne(path, f.name, uri); ok++; }
+      catch (err) { ftpStatus('Chyba u ' + f.name + ': ' + err.message, 'err'); }
+    }
+    ftpStatus(`Nahráno ${ok}/${files.length} → ${path}`, 'ok');
+    if (path === currentPath) ftpRefresh();
+    return;
+  }
+
+  // 2) obrázek přetažený z pravého panelu (staging)
+  const idx = e.dataTransfer.getData('app/staged');
+  if (idx !== '') {
+    const item = staged[+idx];
+    if (!item) return;
+    ftpStatus(`Nahrávám ${item.name} → ${path}…`);
+    try {
+      await uploadOne(path, item.name, item.dataUri);
+      item.done = true;
+      renderStage();
+      ftpStatus(`Nahráno: ${item.name} → ${path}`, 'ok');
+      if (path === currentPath) ftpRefresh();
+    } catch (err) {
+      ftpStatus('Nahrání selhalo: ' + err.message, 'err');
+    }
+  }
+}
+
+/* ----- staging (pravý panel) ----- */
+function renderStage() {
+  const grid = document.getElementById('stageGrid');
+  const hint = document.getElementById('stageHint');
+  grid.innerHTML = '';
+  hint.style.display = staged.length ? 'none' : 'block';
+
+  staged.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'stage-thumb' + (it.done ? ' uploaded' : '');
+    d.draggable = true;
+    d.ondragstart = e => e.dataTransfer.setData('app/staged', String(i));
+    d.innerHTML =
+      `<img src="${it.dataUri}" alt="">` +
+      `<button class="rm" title="Odebrat">✕</button>` +
+      `<span class="nm">${escapeHtml(it.name)}</span>`;
+    d.querySelector('.rm').onclick = ev => { ev.stopPropagation(); staged.splice(i, 1); renderStage(); };
+    grid.appendChild(d);
+  });
+}
+
+function clearStage() { staged = []; renderStage(); }
+
+function onStageOver(e) {
+  if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); document.getElementById('stageBody').classList.add('drag-over'); }
+}
+function onStageLeave(e) { document.getElementById('stageBody').classList.remove('drag-over'); }
+
+async function onStageDrop(e) {
+  document.getElementById('stageBody').classList.remove('drag-over');
+  const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  e.preventDefault();
+  for (const f of files) {
+    const uri = await readFileAsDataURL(f);
+    staged.push({name: f.name, dataUri: uri, done: false});
+  }
+  renderStage();
+}
+
+/* ----------------------------- utils ----------------------------- */
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error('Nelze přečíst soubor'));
+    fr.readAsDataURL(file);
+  });
+}
+function fmtSize(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(0) + ' kB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
